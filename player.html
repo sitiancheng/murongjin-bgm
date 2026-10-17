@@ -1,0 +1,139 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>慕容锦 · 私人电台</title>
+<style>
+:root{--gold:#ffd88a;--pink:#ff8fab;--mint:#7fffd4;--txt:#f3e6d4;--dim:#a8917a}
+*{box-sizing:border-box}
+html,body{margin:0;background:#12040a;color:var(--txt);font-family:-apple-system,"PingFang SC","Microsoft YaHei",sans-serif;font-size:13px;user-select:none;-webkit-tap-highlight-color:transparent}
+.wrap{padding:10px 12px 8px}
+.now{display:flex;gap:11px;align-items:center}
+.cd{width:46px;height:46px;border-radius:50%;flex:none;display:flex;align-items:center;justify-content:center;font-weight:700;color:#fff;background:radial-gradient(circle,#111 16%,#3a0e1c 17%,#c23b5a 58%,#3a0e1c 60%,#111 72%);box-shadow:0 0 10px rgba(224,96,126,.6);animation:spin 5s linear infinite;animation-play-state:paused}
+.playing .cd{animation-play-state:running}
+@keyframes spin{to{transform:rotate(360deg)}}
+.meta{flex:1;min-width:0}
+.meta b{display:block;font-size:15px;color:var(--gold);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.meta small{font-size:11px;color:var(--dim);letter-spacing:1px}
+.playing .meta small{color:var(--mint)}
+.bar{display:flex;align-items:center;gap:8px;margin-top:9px;font-family:Consolas,monospace;font-size:10.5px;color:var(--dim)}
+input[type=range]{-webkit-appearance:none;appearance:none;flex:1;height:5px;border-radius:9px;background:rgba(255,255,255,.12);outline:none;cursor:pointer}
+input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:12px;height:12px;border-radius:50%;background:var(--gold);box-shadow:0 0 6px var(--pink)}
+input[type=range]::-moz-range-thumb{width:12px;height:12px;border:none;border-radius:50%;background:var(--gold)}
+.ctl{display:flex;align-items:center;justify-content:center;gap:14px;margin-top:8px}
+button{border:none;background:none;color:var(--txt);cursor:pointer;font-size:16px;padding:4px;line-height:1}
+button:hover{color:var(--gold)}
+.pp{width:40px;height:40px;border-radius:50%;background:linear-gradient(135deg,var(--gold),var(--pink));color:#3a0e1c;font-size:16px;box-shadow:0 0 12px rgba(255,143,171,.5)}
+.pp:hover{color:#3a0e1c}
+.mode,.vol{font-size:12px;color:var(--dim)}
+.volw{display:flex;align-items:center;gap:6px;margin-top:6px}
+.volw input{max-width:110px}
+ol{list-style:none;margin:8px 0 0;padding:6px 0 0;border-top:1px dashed rgba(255,207,122,.25)}
+li{display:flex;gap:8px;align-items:center;padding:6px 6px;border-radius:7px;cursor:pointer}
+li:hover{background:rgba(224,96,126,.15)}
+li i{font-style:normal;font-family:Consolas,monospace;font-size:11px;color:var(--dim);width:18px}
+li.on{color:var(--pink);background:rgba(224,96,126,.12)}
+li.on i{color:var(--pink)}
+.tip{margin-top:4px;text-align:center;font-family:Consolas,monospace;font-size:10px;letter-spacing:1px;color:var(--dim)}
+.tip.warn{color:var(--pink)}
+</style>
+</head>
+<body>
+<div class="wrap" id="app">
+  <div class="now">
+    <div class="cd">锦</div>
+    <div class="meta"><b id="title">琵琶曲</b><small id="state">点 ▶ 开始播放</small></div>
+  </div>
+  <div class="bar"><span id="cur">0:00</span><input id="seek" type="range" min="0" max="1000" value="0"><span id="dur">0:00</span></div>
+  <div class="ctl">
+    <button class="mode" id="mode" title="播放模式">🔁 列表</button>
+    <button id="prev" title="上一首">⏮</button>
+    <button class="pp" id="pp" title="播放 / 暂停">▶</button>
+    <button id="next" title="下一首">⏭</button>
+    <button class="vol" id="mute" title="静音">🔊</button>
+  </div>
+  <div class="volw"><span class="vol">音量</span><input id="vol" type="range" min="0" max="100" value="80"></div>
+  <ol id="list"></ol>
+  <div class="tip" id="tip">点歌名直接切歌 · 收起播放器音乐不会停</div>
+</div>
+<audio id="a" preload="none"></audio>
+<script>
+const BASE = 'https://cdn.jsdelivr.net/gh/sitiancheng/murongjin-bgm@main/';
+const SONGS = ['琵琶曲', '风催雨', '美周郎', '西厢寻他', '傻女'];
+const MODES = [['🔁 列表', 'list'], ['🔂 单曲', 'one'], ['🔀 随机', 'shuffle']];
+
+const $ = id => document.getElementById(id);
+const a = $('a');
+let idx = 0, modeIdx = 0, seeking = false;
+
+function store(k, v) { try { if (v === undefined) return localStorage.getItem(k); localStorage.setItem(k, v); } catch (e) { return null; } }
+
+const savedVol = store('mrj-vol');
+a.volume = savedVol !== null ? Number(savedVol) / 100 : 0.8;
+$('vol').value = Math.round(a.volume * 100);
+const savedMode = store('mrj-mode');
+if (savedMode !== null) modeIdx = Number(savedMode) % MODES.length;
+$('mode').textContent = MODES[modeIdx][0];
+
+SONGS.forEach((name, i) => {
+  const li = document.createElement('li');
+  li.innerHTML = '<i>' + String(i + 1).padStart(2, '0') + '</i><span>' + name + '</span>';
+  li.onclick = () => { load(i); play(); };
+  $('list').appendChild(li);
+});
+
+function fmt(t) { if (!isFinite(t)) return '0:00'; t = Math.floor(t); return Math.floor(t / 60) + ':' + String(t % 60).padStart(2, '0'); }
+
+function load(i) {
+  idx = (i + SONGS.length) % SONGS.length;
+  a.src = BASE + (idx + 1) + '.mp3';
+  $('title').textContent = SONGS[idx];
+  document.querySelectorAll('li').forEach((li, j) => li.classList.toggle('on', j === idx));
+  $('seek').value = 0; $('cur').textContent = '0:00'; $('dur').textContent = '0:00';
+}
+
+function play() {
+  a.muted = false;
+  return a.play().catch(() => {
+    $('state').textContent = '点 ▶ 开始播放';
+  });
+}
+
+function nextIdx(step) {
+  if (MODES[modeIdx][1] === 'shuffle' && SONGS.length > 1) {
+    let n; do { n = Math.floor(Math.random() * SONGS.length); } while (n === idx); return n;
+  }
+  return idx + step;
+}
+
+$('pp').onclick = () => { if (a.paused) play(); else a.pause(); };
+$('prev').onclick = () => { load(nextIdx(-1)); play(); };
+$('next').onclick = () => { load(nextIdx(1)); play(); };
+$('mode').onclick = () => { modeIdx = (modeIdx + 1) % MODES.length; $('mode').textContent = MODES[modeIdx][0]; store('mrj-mode', modeIdx); };
+$('mute').onclick = () => { a.muted = !a.muted; };
+$('vol').oninput = e => { a.volume = e.target.value / 100; a.muted = false; store('mrj-vol', e.target.value); };
+$('seek').oninput = () => { seeking = true; $('cur').textContent = fmt(a.duration * $('seek').value / 1000); };
+$('seek').onchange = () => { if (isFinite(a.duration)) a.currentTime = a.duration * $('seek').value / 1000; seeking = false; };
+
+a.onplay = () => { $('app').classList.add('playing'); $('pp').textContent = '⏸'; $('state').textContent = '♪ 正在播放'; };
+a.onpause = () => { $('app').classList.remove('playing'); $('pp').textContent = '▶'; $('state').textContent = '已暂停'; };
+a.onvolumechange = () => { $('mute').textContent = a.muted || a.volume === 0 ? '🔇' : '🔊'; };
+a.onloadedmetadata = () => { $('dur').textContent = fmt(a.duration); };
+a.ontimeupdate = () => {
+  if (seeking || !isFinite(a.duration)) return;
+  $('cur').textContent = fmt(a.currentTime);
+  $('seek').value = Math.round(a.currentTime / a.duration * 1000);
+};
+a.onended = () => {
+  if (MODES[modeIdx][1] === 'one') { a.currentTime = 0; play(); }
+  else { load(nextIdx(1)); play(); }
+};
+a.onerror = () => { $('tip').textContent = '这首加载失败了，点 ⏭ 换下一首'; $('tip').classList.add('warn'); };
+
+load(0);
+// 尝试自动播放；浏览器不允许时，等用户点一下再放
+play();
+</script>
+</body>
+</html>
