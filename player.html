@@ -59,20 +59,30 @@ li.on i{color:var(--pink)}
 </div>
 <audio id="a" preload="none"></audio>
 <script>
-const BASE = 'https://cdn.jsdelivr.net/gh/sitiancheng/murongjin-bgm@main/';
+// 歌曲线路：一条加载失败就自动换下一条，国内外都尽量能听
+const MIRRORS = [
+  'https://cdn.jsdelivr.net/gh/sitiancheng/murongjin-bgm@main/',
+  'https://fastly.jsdelivr.net/gh/sitiancheng/murongjin-bgm@main/',
+  'https://gcore.jsdelivr.net/gh/sitiancheng/murongjin-bgm@main/',
+  'https://testingcf.jsdelivr.net/gh/sitiancheng/murongjin-bgm@main/',
+  'https://raw.githubusercontent.com/sitiancheng/murongjin-bgm/main/',
+  'https://sitiancheng.github.io/murongjin-bgm/'
+];
 // [歌名, 仓库里的文件名]，数组顺序就是播放顺序
 const SONGS = [['傻女', '5.mp3'], ['琵琶曲', '1.mp3'], ['风催雨', '2.mp3'], ['美周郎', '3.mp3'], ['西厢寻他', '4.mp3']];
 const MODES = [['🔁 列表', 'list'], ['🔂 单曲', 'one'], ['🔀 随机', 'shuffle']];
 
 const $ = id => document.getElementById(id);
 const a = $('a');
-let idx = 0, modeIdx = 0, seeking = false;
+let idx = 0, modeIdx = 0, seeking = false, mirror = 0, tried = 0;
 
 function store(k, v) { try { if (v === undefined) return localStorage.getItem(k); localStorage.setItem(k, v); } catch (e) { return null; } }
 
 const savedVol = store('mrj-vol');
 a.volume = savedVol !== null ? Number(savedVol) / 100 : 0.8;
 $('vol').value = Math.round(a.volume * 100);
+const savedMirror = store('mrj-mirror');
+if (savedMirror !== null) mirror = Number(savedMirror) % MIRRORS.length;
 const savedMode = store('mrj-mode');
 if (savedMode !== null) modeIdx = Number(savedMode) % MODES.length;
 $('mode').textContent = MODES[modeIdx][0];
@@ -88,7 +98,8 @@ function fmt(t) { if (!isFinite(t)) return '0:00'; t = Math.floor(t); return Mat
 
 function load(i) {
   idx = (i + SONGS.length) % SONGS.length;
-  a.src = BASE + SONGS[idx][1];
+  tried = 0;
+  a.src = MIRRORS[mirror] + SONGS[idx][1];
   $('title').textContent = SONGS[idx][0];
   document.querySelectorAll('li').forEach((li, j) => li.classList.toggle('on', j === idx));
   $('seek').value = 0; $('cur').textContent = '0:00'; $('dur').textContent = '0:00';
@@ -130,7 +141,23 @@ a.onended = () => {
   if (MODES[modeIdx][1] === 'one') { a.currentTime = 0; play(); }
   else { load(nextIdx(1)); play(); }
 };
-a.onerror = () => { $('tip').textContent = '这首加载失败了，点 ⏭ 换下一首'; $('tip').classList.add('warn'); };
+a.onerror = () => {
+  if (tried < MIRRORS.length - 1) {
+    tried++;
+    mirror = (mirror + 1) % MIRRORS.length;
+    a.src = MIRRORS[mirror] + SONGS[idx][1];
+    $('tip').textContent = '正在换线路 ' + (mirror + 1) + ' / ' + MIRRORS.length + '……';
+    play();
+    return;
+  }
+  $('tip').textContent = '所有线路都连不上，检查一下网络再点 ▶';
+  $('tip').classList.add('warn');
+};
+a.oncanplay = () => {
+  store('mrj-mirror', mirror);
+  $('tip').textContent = '点歌名直接切歌 · 收起播放器音乐不会停';
+  $('tip').classList.remove('warn');
+};
 
 load(0);
 // 尝试自动播放；浏览器不允许时，等用户点一下再放
